@@ -198,6 +198,33 @@ body{
   padding:20px 0 4px;letter-spacing:0.8px;
 }
 
+/* ===== Mode bar ===== */
+.mode-bar{display:flex;align-items:center;justify-content:center;gap:16px;padding:0 0 14px;flex-wrap:wrap}
+.mode-toggle{display:flex;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.mode-btn{
+  padding:6px 16px;font-size:12px;font-weight:500;border:none;cursor:pointer;
+  font-family:inherit;background:var(--surface);color:var(--text-muted);
+  transition:all .15s;letter-spacing:0.3px;
+}
+.mode-btn:not(:last-child){border-right:1px solid var(--border)}
+.mode-btn.active{background:var(--accent);color:#fff}
+.mode-btn:hover:not(.active){background:var(--surface-hover)}
+.rounds-ctrl{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted)}
+.rounds-ctrl input{
+  width:44px;padding:5px 4px;font-size:12px;font-weight:500;text-align:center;
+  border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);color:var(--text);font-family:inherit;
+}
+.rounds-ctrl input:focus{outline:none;border-color:var(--accent-dim)}
+.rounds-ctrl.hide{display:none}
+.rounds-btn{
+  width:28px;height:28px;padding:0;font-size:15px;line-height:1;font-weight:500;
+  border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;
+  background:var(--surface);color:var(--text-muted);font-family:inherit;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+}
+.rounds-btn:hover{background:var(--surface-hover);border-color:var(--accent-dim);color:var(--accent-dim)}
+
 /* ===== Toast ===== */
 .toast-container{position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:999;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
 .toast{
@@ -222,6 +249,7 @@ body{
   .cell{font-size:16px;border-radius:3px}
   .grid{gap:1.5px}
   .record-chart-wrap canvas{height:100px}
+  .mode-bar{gap:10px}
 }
 </style>
 </head>
@@ -246,6 +274,20 @@ body{
       </select>
       <button class="btn btn-start" id="btnStart">开始训练</button>
       <button class="btn btn-abandon hide" id="btnAbandon">放弃</button>
+    </div>
+  </div>
+
+  <!-- Mode bar -->
+  <div class="mode-bar">
+    <div class="mode-toggle" id="modeToggle">
+      <button class="mode-btn active" data-mode="single">一次性</button>
+      <button class="mode-btn" data-mode="continuous">连续挑战</button>
+    </div>
+    <div class="rounds-ctrl hide" id="roundsCtrl">
+      <label>次数</label>
+      <button class="rounds-btn" id="rDec">−</button>
+      <input type="number" id="roundsInput" value="5" min="2" max="50">
+      <button class="rounds-btn" id="rInc">+</button>
     </div>
   </div>
 
@@ -285,12 +327,14 @@ const state = {
   size:5,total:25,grid:[],colors:{},
   nextNum:0,status:'idle',startTime:0,elapsed:0,timerId:null,
   errorCount:0,
+  mode:'single',totalRounds:5,currentRound:0,roundTimes:[],
 };
 
 // ===== DOM =====
 const $=id=>document.getElementById(id);
 const gridEl=$('grid'),gw=$('gridWrapper'),ss=$('sizeSelect');
 const btn=$('btnStart'),btnAbn=$('btnAbandon'),td=$('timerDisplay'),sl=$('statusLine'),re=$('records');
+const mt=$('modeToggle'),rc=$('roundsCtrl'),ri=$('roundsInput');
 
 // ===== Fisher-Yates =====
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -305,11 +349,11 @@ function renderGrid(){
   const s=state.size;
   gridEl.style.gridTemplateColumns=`repeat(${s},1fr)`;
   gridEl.innerHTML='';
-  const isIdle=state.status==='idle';
+  const isIdle=state.status==='idle',isPause=state.status==='pause';
   const fs=s>=8?'15px':s>=6?'18px':s>=4?'22px':'27px';
   state.grid.forEach(n=>{
     const c=document.createElement('div');
-    c.className='cell'+(isIdle?' disabled':'');
+    c.className='cell'+(isIdle||isPause?' disabled':'');
     if(!isIdle){c.textContent=n;c.style.fontSize=fs}
     c.style.color=state.colors[n];
     c.dataset.num=n;c.addEventListener('click',()=>handleClick(n));
@@ -381,27 +425,94 @@ function completeGame(){
   state.status='completed';
   clearInterval(state.timerId);state.timerId=null;
   state.elapsed=(performance.now()-state.startTime)/1000;
-  td.textContent=state.elapsed.toFixed(2);td.className='timer-value done';
-  sl.innerHTML=`完成 · 用时 <em>${state.elapsed.toFixed(2)}s</em>`;
-  btn.textContent='再来一次';btn.disabled=false;
-  btnAbn.classList.add('hide');
+  const t=state.elapsed;
+  td.textContent=t.toFixed(2);td.className='timer-value done';
+  sl.innerHTML=`完成 · 用时 <em>${t.toFixed(2)}s</em>`;
   gw.classList.remove('complete');void gw.offsetWidth;gw.classList.add('complete');
-  saveRecord(state.size,state.elapsed);renderRecords();
+  saveRecord(state.size,t);renderRecords();
+
+  if(state.mode==='single'){
+    btn.textContent='再来一次';btn.disabled=false;
+    btnAbn.classList.add('hide');
+  }else{
+    state.roundTimes.push(t);
+    if(state.currentRound<state.totalRounds){
+      btnAbn.classList.add('hide');
+      continueSequence();
+    }else{
+      finishContinuous();
+    }
+  }
+}
+
+// ===== Mode =====
+function updateModeUI(e){
+  const m=e.target.dataset.mode;
+  if(!m||state.status!=='idle')return;
+  mt.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+  state.mode=m;
+  rc.classList.toggle('hide',m==='single');
+  resetGame();
 }
 
 // ===== Start =====
 function startGame(){
-  genGrid(parseInt(ss.value));
-  state.nextNum=1;state.status='playing';state.elapsed=0;state.errorCount=0;
+  if(state.mode==='continuous'){
+    state.currentRound=0;state.roundTimes=[];
+    genGrid(parseInt(ss.value));
+    startRound();
+  }else{
+    genGrid(parseInt(ss.value));
+    state.nextNum=1;state.status='playing';state.elapsed=0;state.errorCount=0;
+    if(state.timerId){clearInterval(state.timerId);state.timerId=null}
+    btn.textContent='进行中';btn.disabled=true;
+    btnAbn.classList.remove('hide');
+    renderGrid();updateStatus();startTimer();
+  }
+}
+
+function startRound(){
+  state.currentRound++;state.nextNum=1;state.status='playing';state.elapsed=0;state.errorCount=0;
   if(state.timerId){clearInterval(state.timerId);state.timerId=null}
-  btn.textContent='进行中';btn.disabled=true;
+  btn.textContent=`第 ${state.currentRound}/${state.totalRounds} 轮`;btn.disabled=true;
   btnAbn.classList.remove('hide');
-  renderGrid();updateStatus();startTimer();
+  renderGrid();
+  td.textContent='0.00';td.className='timer-value';
+  sl.innerHTML=`第 ${state.currentRound} 轮 · 下一个 <em>1</em>`;
+  startTimer();
+}
+
+function continueSequence(){
+  state.status='pause';
+  genGrid(parseInt(ss.value));
+  renderGrid();
+  let c=2;
+  td.textContent=c;td.className='timer-value';
+  sl.innerHTML=`下一轮准备 <em>${c}</em>`;
+  state.timerId=setInterval(()=>{
+    c--;
+    if(c>0){
+      td.textContent=c;td.className='timer-value';
+      sl.innerHTML=`下一轮准备 <em>${c}</em>`;
+    }else{
+      clearInterval(state.timerId);state.timerId=null;
+      startRound();
+    }
+  },1000);
+}
+
+function finishContinuous(){
+  btn.textContent='再来一次';btn.disabled=false;
+  btnAbn.classList.add('hide');
+  const times=state.roundTimes,best=Math.min(...times),worst=Math.max(...times),avg=mean(times);
+  sl.innerHTML=`连续挑战完成 · 最佳 <em>${best.toFixed(2)}s</em> · 最差 <em>${worst.toFixed(2)}s</em> · 平均 <em>${avg.toFixed(2)}s</em>`;
+  showToast(`连续挑战完成！${state.totalRounds} 轮 · 平均 ${avg.toFixed(2)}s`,false);
 }
 
 // ===== Reset =====
 function resetGame(){
   state.status='idle';state.nextNum=0;state.elapsed=0;state.errorCount=0;
+  state.currentRound=0;state.roundTimes=[];
   if(state.timerId){clearInterval(state.timerId);state.timerId=null}
   btn.textContent='开始训练';btn.disabled=false;
   btnAbn.classList.add('hide');
@@ -510,14 +621,20 @@ function fmt(iso){try{const d=new Date(iso);return String(d.getMonth()+1).padSta
 
 // ===== Abandon =====
 function abandonGame(){
-  if(!confirm('确定放弃本次挑战？'))return;
+  const msg=state.mode==='continuous'?'确定停止连续挑战？':'确定放弃本次挑战？';
+  if(!confirm(msg))return;
   resetGame();
 }
 
 // ===== Events =====
-ss.addEventListener('change',()=>{if(state.status==='playing')return;resetGame()});
+ss.addEventListener('change',()=>{if(state.status==='playing'||state.status==='pause')return;resetGame()});
 btn.addEventListener('click',startGame);
 btnAbn.addEventListener('click',abandonGame);
+mt.addEventListener('click',updateModeUI);
+ri.addEventListener('change',()=>{const v=parseInt(ri.value);if(v>=2)state.totalRounds=v});
+const rAdj=(delta)=>{const v=parseInt(ri.value)+delta;if(v>=2&&v<=50){ri.value=v;state.totalRounds=v}};
+$('rDec').addEventListener('click',()=>rAdj(-1));
+$('rInc').addEventListener('click',()=>rAdj(1));
 
 // ===== Init =====
 function init(){genGrid(parseInt(ss.value));renderGrid();updateStatus();renderRecords()}
