@@ -493,7 +493,7 @@ function renderRecords(){
     html+=`<div class="record-block">
       <div class="record-summary">
         <h3>${sz}×${sz} <span>(${list.length} 次)</span></h3>
-        <div class="record-stats"><span>平均 <b>${m.toFixed(2)}s</b></span><span>方差 <b>${v.toFixed(2)}</b></span></div>
+        <div class="record-stats"><span>平均 <b>${m.toFixed(2)}s</b></span><span>标准差 <b>${Math.sqrt(v).toFixed(2)}s</b></span></div>
       </div>
       <div class="record-chart-wrap"><canvas id="c-${sz}"></canvas></div>
       <div class="record-list">${list.map((r,i)=>`<div class="record-item">
