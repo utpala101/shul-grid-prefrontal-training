@@ -18,4 +18,4 @@
 
 ## 在线体验
 
-https://utpala101.github.io/2026.6.4_舒尔方格锻炼前额叶/
+[https://utpala101.github.io/2026.6.4_舒尔方格锻炼前额叶/](https://utpala101.github.io/shul-grid-prefrontal-training/)
