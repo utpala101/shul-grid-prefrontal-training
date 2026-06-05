@@ -198,6 +198,17 @@ body{
   padding:20px 0 4px;letter-spacing:0.8px;
 }
 
+/* ===== Toast ===== */
+.toast-container{position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:999;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.toast{
+  background:var(--danger);color:#fff;padding:12px 24px;border-radius:var(--radius-lg);
+  font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(212,122,106,0.25);
+  opacity:0;transform:translateY(-12px) scale(0.96);transition:all .3s ease;
+  pointer-events:auto;white-space:nowrap;
+}
+.toast.show{opacity:1;transform:translateY(0) scale(1)}
+.toast.info{background:var(--accent);box-shadow:0 4px 20px var(--accent-glow)}
+
 /* ===== Mobile ===== */
 @media(max-width:480px){
   body{padding:14px}
@@ -245,6 +256,9 @@ body{
     <div class="timer-sub" id="statusLine">准备就绪</div>
   </div>
 
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <!-- Grid -->
   <div class="grid-wrapper" id="gridWrapper">
     <div class="grid" id="grid"></div>
@@ -270,6 +284,7 @@ const COLORS = [
 const state = {
   size:5,total:25,grid:[],colors:{},
   nextNum:0,status:'idle',startTime:0,elapsed:0,timerId:null,
+  errorCount:0,
 };
 
 // ===== DOM =====
@@ -329,11 +344,36 @@ function startTimer(){
 
 // ===== Click =====
 function handleClick(n){
-  if(state.status!=='playing'||n!==state.nextNum)return;
+  if(state.status!=='playing')return;
+  if(n!==state.nextNum){
+    state.errorCount++;
+    if(state.errorCount===3){
+      showToast('注意集中！连续点错 3 次了',true);
+      state.errorCount=0;
+    }
+    return;
+  }
+  state.errorCount=0;
   const cell=gridEl.querySelector(`[data-num="${n}"]`);
   if(cell){cell.classList.add('hit');setTimeout(()=>cell.classList.remove('hit'),220)}
   state.nextNum++;updateStatus();
   if(state.nextNum>state.total)completeGame();
+}
+
+// ===== Toast =====
+let toastTimer;
+function showToast(msg,warn){
+  const c=$('toastContainer');
+  const t=document.createElement('div');
+  t.className='toast'+(warn?'':' info');
+  t.textContent=msg;
+  c.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{
+    t.classList.remove('show');
+    setTimeout(()=>t.remove(),300);
+  },2000);
 }
 
 // ===== Complete =====
@@ -352,7 +392,7 @@ function completeGame(){
 // ===== Start =====
 function startGame(){
   genGrid(parseInt(ss.value));
-  state.nextNum=1;state.status='playing';state.elapsed=0;
+  state.nextNum=1;state.status='playing';state.elapsed=0;state.errorCount=0;
   if(state.timerId){clearInterval(state.timerId);state.timerId=null}
   btn.textContent='进行中';btn.disabled=true;
   btnAbn.classList.remove('hide');
@@ -361,7 +401,7 @@ function startGame(){
 
 // ===== Reset =====
 function resetGame(){
-  state.status='idle';state.nextNum=0;state.elapsed=0;
+  state.status='idle';state.nextNum=0;state.elapsed=0;state.errorCount=0;
   if(state.timerId){clearInterval(state.timerId);state.timerId=null}
   btn.textContent='开始训练';btn.disabled=false;
   btnAbn.classList.add('hide');
